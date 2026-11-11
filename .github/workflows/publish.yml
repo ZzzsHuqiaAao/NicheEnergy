@@ -1,0 +1,90 @@
+name: Publish NicheEnergy to PyPI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pypi-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.10'
+      - name: Build and check distributions
+        run: |
+          python -m pip install build==1.6.1 twine==7.0.0
+          python -m build
+          python -m twine check --strict dist/*
+      - name: Install the wheel
+        run: |
+          python -m pip install dist/*.whl --extra-index-url https://download.pytorch.org/whl/cpu
+          python -m pip check
+      - name: Check training and model loading
+        env:
+          OMP_NUM_THREADS: '1'
+          OPENBLAS_NUM_THREADS: '1'
+        run: |
+          python -I - <<'PY'
+          from pathlib import Path
+          import tempfile
+          import anndata as ad
+          import nicheenergy
+          import numpy as np
+          import pandas as pd
+          import torch
+          from scvi import settings
+          from nicheenergy import NicheEnergy
+
+          assert 'site-packages' in str(Path(nicheenergy.__file__))
+          torch.set_num_threads(1)
+          settings.seed = 0
+          rng = np.random.default_rng(0)
+          adata = ad.AnnData(rng.poisson(3, (600, 32)).astype('float32'))
+          adata.obs['batch'] = pd.Categorical(['a'] * 300 + ['b'] * 300)
+          adata.obsm['spatial'] = rng.normal(size=(600, 2)).astype('float32')
+          NicheEnergy.setup_anndata(adata, batch_key='batch')
+          graph = NicheEnergy.extract_edge_index_and_distance(adata, batch_key='batch')
+          model = NicheEnergy(adata)
+          loss, _ = model.train(graph, use_gpu=False, max_epochs=2)
+          assert len(loss) == 2 and np.isfinite(loss).all()
+          model.module.eval()
+          states = {kind: model.get_latent_representation(graph, representation_kind=kind)
+                    for kind in ('intrinsic', 'interaction')}
+          assert all(x.shape[0] == 600 and np.isfinite(x).all() for x in states.values())
+          with tempfile.TemporaryDirectory() as folder:
+              model.save(folder, overwrite=True)
+              restored = NicheEnergy.load(folder, adata=adata, use_gpu=False)
+              restored.module.eval()
+              for kind, expected in states.items():
+                  np.testing.assert_array_equal(expected, restored.get_latent_representation(graph, representation_kind=kind))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: python-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    environment:
+      name: pypi
+      url: https://pypi.org/project/nicheenergy/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: python-distributions
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086

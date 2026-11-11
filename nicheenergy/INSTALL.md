@@ -1,27 +1,37 @@
 # Installation
 
-## New Linux environment
-
-Use Python 3.10 and an NVIDIA GPU/driver compatible with the [PyTorch 2.5.1 CUDA 12.1 build](https://pytorch.org/get-started/previous-versions/#v251). For example, create an environment with Conda:
+NicheEnergy requires Python 3.10. A separate environment is recommended:
 
 ```bash
 conda create -n nicheenergy python=3.10 -y
 conda activate nicheenergy
+pip install nicheenergy
 ```
 
-From the downloaded NicheEnergy repository, run:
+## NVIDIA GPU
+
+The MERFISH tutorial uses an NVIDIA GPU. For the tested PyTorch 2.5.1 / CUDA 12.1 build, install PyTorch first:
 
 ```bash
 python -m pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-python -m pip install -r config.txt
-python -m pip install --no-deps scvi-tools==0.16.1 .
+pip install nicheenergy
 ```
 
-These steps apply to both newer and older Linux servers. `--no-deps` keeps the tested scvi-tools 0.16.1 / Lightning 1.8.6 combination; scvi-tools declares Lightning <1.6, so `pip check` reports that version conflict. The toolchain and dependency versions are listed in `config.txt`.
+The model can also run on CPU. Choose a PyTorch build compatible with your system and driver; see the [PyTorch installation instructions](https://pytorch.org/get-started/previous-versions/#v251).
+
+## From source
+
+From the downloaded NicheEnergy repository:
+
+```bash
+python -m pip install .
+```
+
+The package uses scvi-tools 0.20.3 and PyTorch Lightning 1.9.5. The pinned validation environment is listed in `config.txt`.
 
 ## Notebook kernel (optional)
 
 ```bash
-python -m pip install -c config.txt ipykernel==6.31.0 nbclient==0.10.4 nbformat==5.10.4
+python -m pip install ipykernel
 python -m ipykernel install --user --name nicheenergy --display-name "Python 3.10 (NicheEnergy)"
 ```

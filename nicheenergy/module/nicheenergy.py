@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from scvi import REGISTRY_KEYS
 from scvi.distributions import ZeroInflatedNegativeBinomial, NegativeBinomial
-from scvi.module.base import BaseModuleClass, LossRecorder, auto_move_data
+from scvi.module.base import BaseModuleClass, LossOutput, auto_move_data
 from scvi.nn import DecoderSCVI, Encoder, one_hot
 from torch.distributions import Normal, Poisson, StudentT
 from torch.distributions import kl_divergence as kl
@@ -241,6 +241,9 @@ def mixture_nb_loss(x, beta, alpha, pi, theta, eps: float = 1e-8):
 
 
 class NicheEnergyModule(nn.Module):
+    def on_load(self, model):
+        pass
+
 
     def __init__(
         self,
@@ -1103,7 +1106,7 @@ class NicheEnergyModule(nn.Module):
         weight = 1,
         edge_index: Optional[torch.Tensor] = None,
         adversarial_weight: float = 0.0,
-    ) -> LossRecorder:
+    ) -> LossOutput:
         """
         Compute (generator) loss terms for NicheEnergy. 
 
@@ -1151,13 +1154,11 @@ class NicheEnergyModule(nn.Module):
             kl_divergence_zgat=kl_divergence_zgat
         )
 
-        # LossRecorder internally sums the `reconst_loss`, `kl_local`, and `kl_global`
-        # terms before logging, so we do the same for our `wasserstein_loss` term.
-        return LossRecorder(
-            loss,
-            reconst_loss,
-            self.lam_mi * mi_loss,
-            kl_local
+        return LossOutput(
+            loss=loss,
+            reconstruction_loss=reconst_loss,
+            kl_local=self.lam_mi * mi_loss,
+            kl_global=kl_local,
         )
         
     def mi_loss(
